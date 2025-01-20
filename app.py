@@ -25,19 +25,27 @@ except Exception as e:
 if st.button("Test Databricks Connection"):
     st.write("2. Testing Databricks connection...")
     try:
-        with sql.connect(
+        # Try direct SQL endpoint path
+        connection = sql.connect(
             server_hostname=host,
-            http_path=f'/sql/1.0/warehouses/{cluster}',
-            access_token=token,
-            connect_timeout=10
-        ) as connection:
-            with connection.cursor() as cursor:
-                st.write("3. Executing test query...")
-                cursor.execute("SELECT 1")
-                result = cursor.fetchone()
-                st.success(f"✅ Test query successful! Result: {result[0]}")
+            http_path=f'sql/protocolv1/o/0/0113-105351-ekj09bd1',  # Modified path
+            access_token=token
+        )
+        with connection.cursor() as cursor:
+            st.write("3. Executing test query...")
+            cursor.execute("SELECT 1")
+            result = cursor.fetchone()
+            st.success(f"✅ Test query successful! Result: {result[0]}")
     except Exception as e:
         st.error(f"Connection failed: {str(e)}")
+        st.write("Debug info:")
+        st.write("Try checking:")
+        st.write("1. SQL warehouse is running")
+        st.write("2. Token has SQL warehouse access")
+        st.write("3. Connection path is correct")
 
-st.write("Note: You can check your Databricks SQL warehouse settings at:")
-st.write(f"https://{host}/sql/warehouses")
+st.write("---")
+st.write("To find the correct HTTP path:")
+st.write("1. Go to SQL warehouse in Databricks")
+st.write("2. Click on Connection Details")
+st.write("3. Look for 'HTTP Path' value")
