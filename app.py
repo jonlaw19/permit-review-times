@@ -4,6 +4,7 @@ import requests
 from databricks import sql
 import numpy as np
 import logging
+import time
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -22,24 +23,32 @@ except Exception as e:
     st.sidebar.error(f"❌ Error loading secrets: {str(e)}")
     st.stop()
 
-# Initialize sentence transformer
-@st.cache_resource
-def init_model():
-    return SentenceTransformer('all-MiniLM-L6-v2')
-
-# Test Databricks connection
+# Test Databricks connection with timeout
+st.sidebar.write("Testing Databricks connection...")
 try:
-    with sql.connect(
+    connection = sql.connect(
         server_hostname=databricks_host,
         http_path=f'/sql/1.0/warehouses/{databricks_cluster}',
-        access_token=databricks_token
-    ) as connection:
-        with connection.cursor() as cursor:
-            # Simple test query
-            cursor.execute("SELECT 1")
+        access_token=databricks_token,
+        connect_timeout=30
+    )
+    
+    # Test the connection with a simple query
+    with connection.cursor() as cursor:
+        st.sidebar.write("Executing test query...")
+        cursor.execute("SELECT 1")
+        result = cursor.fetchone()
+        if result[0] == 1:
             st.sidebar.success("✅ Databricks connection successful")
+        else:
+            st.sidebar.error("❌ Unexpected test query result")
+            st.stop()
+    
 except Exception as e:
     st.sidebar.error(f"❌ Databricks connection failed: {str(e)}")
+    st.sidebar.write("Debug info:")
+    st.sidebar.write(f"Host: {databricks_host}")
+    st.sidebar.write(f"Cluster ID: {databricks_cluster}")
     st.stop()
 
 # OpenAI client
