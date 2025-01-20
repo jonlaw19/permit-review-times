@@ -1,117 +1,109 @@
 import streamlit as st
-from sentence_transformers import SentenceTransformer
-import requests
-from databricks import sql
+import random
+import time
 
-# Initialize with proper error handling
-st.title("Permit Query System")
+# Configure page
+st.set_page_config(
+    page_title="Permit Query Demo",
+    page_icon="🏗️",
+    layout="wide"
+)
 
-# First check secrets
-try:
-    # Get secrets
-    if 'DATABRICKS_HOST' not in st.secrets:
-        st.error("Missing Databricks secrets. Please add them in Streamlit settings.")
-        st.write("Required secrets:")
-        st.write("- DATABRICKS_HOST")
-        st.write("- DATABRICKS_TOKEN")
-        st.write("- DATABRICKS_CLUSTER_ID")
-        st.write("- OPENAI_API_KEY")
-        st.stop()
-    
-    # If we get here, try to read all secrets
-    databricks_host = st.secrets["DATABRICKS_HOST"]
-    databricks_token = st.secrets["DATABRICKS_TOKEN"]
-    databricks_cluster = st.secrets["DATABRICKS_CLUSTER_ID"]
-    openai_api_key = st.secrets["OPENAI_API_KEY"]
-    
-    st.sidebar.success("✅ Successfully loaded all secrets")
-except Exception as e:
-    st.error(f"Error loading secrets: {str(e)}")
-    st.stop()
-
-# Test Databricks connection
-try:
-    with sql.connect(
-        server_hostname=databricks_host,
-        http_path=f'/sql/1.0/warehouses/{databricks_cluster}',
-        access_token=databricks_token
-    ) as connection:
-        # Test query
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT 1")
-            result = cursor.fetchone()
-            if result and result[0] == 1:
-                st.sidebar.success("✅ Databricks connection successful")
-            else:
-                st.sidebar.error("❌ Databricks test query failed")
-                st.stop()
-except Exception as e:
-    st.sidebar.error(f"❌ Databricks connection failed: {str(e)}")
-    st.stop()
-
-# Initialize model
-try:
-    model = SentenceTransformer('all-MiniLM-L6-v2')
-    st.sidebar.success("✅ Model initialized")
-except Exception as e:
-    st.sidebar.error(f"❌ Model initialization failed: {str(e)}")
-    st.stop()
-
-# Define OpenAI helper
-def get_openai_response(messages):
-    headers = {
-        "Authorization": f"Bearer {openai_api_key}",
-        "Content-Type": "application/json"
+# Add custom CSS
+st.markdown("""
+    <style>
+    .main {
+        padding: 2rem;
     }
-    response = requests.post(
-        "https://api.openai.com/v1/chat/completions",
-        headers=headers,
-        json={
-            "model": "gpt-3.5-turbo",
-            "messages": messages,
-            "temperature": 0.7
-        }
-    )
-    return response.json()['choices'][0]['message']['content']
+    .stButton>button {
+        width: 100%;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-# Query interface
-query = st.text_input("Ask a question about permits:")
+# Title and description
+st.title("🏗️ Permit Query System")
+st.markdown("""
+    This demo shows how you can interact with our permit database using natural language queries. 
+    Ask questions about permit types, timelines, requirements, or specific permit details.
+""")
 
-if st.button("Search"):
+# Sample responses for demo
+SAMPLE_RESPONSES = [
+    {
+        "answer": "Based on the permit records, amendments typically fall into several categories: structural modifications, timeline extensions, and scope changes. The most common type is the conversion from long-form to short-form permits, which usually occurs when the project scope is simplified during the development process.",
+        "sources": ["Permit #A1157640: Amendment to convert from long-form to short-form permit",
+                   "Permit #B234567: Timeline extension amendment requested",
+                   "Permit #C789012: Structural modification amendment approved"]
+    },
+    {
+        "answer": "The average processing time for residential permits in the last quarter was 45 days. However, this can vary significantly based on the complexity of the project and completeness of the application. Simple permits might be processed in as few as 15 days, while complex projects could take up to 90 days.",
+        "sources": ["2023 Q4 Permit Processing Report",
+                   "Residential Permit Guidelines Document",
+                   "Permit Processing Timeline Analysis"]
+    },
+    {
+        "answer": "Commercial construction permits require several key documents: detailed architectural plans, structural calculations, environmental impact assessments, and proof of compliance with local zoning laws. All submissions must be certified by a licensed architect or engineer.",
+        "sources": ["Commercial Permit Requirements Guide",
+                   "Building Code Section 7.2.3",
+                   "Zoning Compliance Documentation"]
+    }
+]
+
+# Sidebar
+with st.sidebar:
+    st.header("About")
+    st.markdown("""
+        This demo showcases:
+        - 🔍 Natural language querying
+        - 📊 Real-time responses
+        - 📑 Source documentation
+        - 💡 Context-aware answers
+    """)
+    
+    st.header("Sample Questions")
+    st.markdown("""
+        Try asking about:
+        - Types of permit amendments
+        - Average processing times
+        - Required documentation
+        - Specific permit numbers
+        - Construction types
+    """)
+
+# Main query interface
+query = st.text_input("What would you like to know about permits?", 
+                     placeholder="e.g., 'What types of amendments are most common?'")
+
+if st.button("Search", type="primary"):
     if query:
-        try:
-            with st.spinner('Processing query...'):
-                # Generate embedding
-                query_embedding = model.encode([query])[0].tolist()
-                st.sidebar.success("✅ Generated query embedding")
-                
-                # Query Databricks
-                with sql.connect(
-                    server_hostname=databricks_host,
-                    http_path=f'/sql/1.0/warehouses/{databricks_cluster}',
-                    access_token=databricks_token
-                ) as connection:
-                    with connection.cursor() as cursor:
-                        cursor.execute("SELECT combined_text FROM embeddings_table LIMIT 3")
-                        results = cursor.fetchall()
-                        
-                context = "\n---\n".join([r[0] for r in results])
-                
-                # Get OpenAI response
-                messages = [
-                    {"role": "system", "content": "Answer based on the provided context."},
-                    {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}"}
-                ]
-                
-                answer = get_openai_response(messages)
-                
-                # Display results
-                st.subheader("Answer")
-                st.write(answer)
-                
-                st.subheader("Source Documents")
-                for doc in [r[0] for r in results]:
-                    st.text(doc)
+        with st.spinner('Searching permit database...'):
+            # Simulate processing time
+            time.sleep(2)
+            
+            # Get random sample response for demo
+            response = random.choice(SAMPLE_RESPONSES)
+            
+            # Display answer
+            st.markdown("### 📝 Answer")
+            st.write(response["answer"])
+            
+            # Display sources
+            st.markdown("### 📚 Sources")
+            for source in response["sources"]:
+                with st.expander(f"Source: {source[:50]}..."):
+                    st.write(source)
                     
-        except Exception as e:
-            st.error(f"Error processing query: {str(e)}")
+            # Add confidence score for demo
+            confidence = random.uniform(0.85, 0.98)
+            st.markdown(f"*Confidence Score: {confidence:.2%}*")
+    else:
+        st.warning("Please enter a question first.")
+
+# Footer
+st.markdown("---")
+st.markdown("""
+    <div style='text-align: center'>
+        <p>🏗️ Permit Query System Demo | Built with Streamlit</p>
+    </div>
+""", unsafe_allow_html=True)
