@@ -1,5 +1,5 @@
 streamlit
-sentence-transformers
 databricks-sql-connector
+sentence-transformers
 requests
 numpy
