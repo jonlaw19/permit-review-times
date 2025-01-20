@@ -1,51 +1,117 @@
 import streamlit as st
+from sentence_transformers import SentenceTransformer
+import requests
 from databricks import sql
-import time
 
-st.title("Databricks Connection Test")
+# Initialize with proper error handling
+st.title("Permit Query System")
 
-# Display secrets status
-st.write("1. Checking secrets...")
+# First check secrets
 try:
-    host = st.secrets["DATABRICKS_HOST"]
-    token = st.secrets["DATABRICKS_TOKEN"]
-    cluster = st.secrets["DATABRICKS_CLUSTER_ID"]
-    st.success("✅ Secrets loaded successfully")
+    # Get secrets
+    if 'DATABRICKS_HOST' not in st.secrets:
+        st.error("Missing Databricks secrets. Please add them in Streamlit settings.")
+        st.write("Required secrets:")
+        st.write("- DATABRICKS_HOST")
+        st.write("- DATABRICKS_TOKEN")
+        st.write("- DATABRICKS_CLUSTER_ID")
+        st.write("- OPENAI_API_KEY")
+        st.stop()
     
-    # Display connection details (without showing sensitive info)
-    st.write(f"Host: {host}")
-    st.write(f"Cluster ID: {cluster}")
-    st.write(f"Token: {token[:5]}...")
+    # If we get here, try to read all secrets
+    databricks_host = st.secrets["DATABRICKS_HOST"]
+    databricks_token = st.secrets["DATABRICKS_TOKEN"]
+    databricks_cluster = st.secrets["DATABRICKS_CLUSTER_ID"]
+    openai_api_key = st.secrets["OPENAI_API_KEY"]
     
+    st.sidebar.success("✅ Successfully loaded all secrets")
 except Exception as e:
-    st.error(f"Failed to load secrets: {e}")
+    st.error(f"Error loading secrets: {str(e)}")
     st.stop()
 
-# Add a button to test connection
-if st.button("Test Databricks Connection"):
-    st.write("2. Testing Databricks connection...")
-    try:
-        # Try direct SQL endpoint path
-        connection = sql.connect(
-            server_hostname=host,
-            http_path=f'sql/protocolv1/o/0/0113-105351-ekj09bd1',  # Modified path
-            access_token=token
-        )
+# Test Databricks connection
+try:
+    with sql.connect(
+        server_hostname=databricks_host,
+        http_path=f'/sql/1.0/warehouses/{databricks_cluster}',
+        access_token=databricks_token
+    ) as connection:
+        # Test query
         with connection.cursor() as cursor:
-            st.write("3. Executing test query...")
             cursor.execute("SELECT 1")
             result = cursor.fetchone()
-            st.success(f"✅ Test query successful! Result: {result[0]}")
-    except Exception as e:
-        st.error(f"Connection failed: {str(e)}")
-        st.write("Debug info:")
-        st.write("Try checking:")
-        st.write("1. SQL warehouse is running")
-        st.write("2. Token has SQL warehouse access")
-        st.write("3. Connection path is correct")
+            if result and result[0] == 1:
+                st.sidebar.success("✅ Databricks connection successful")
+            else:
+                st.sidebar.error("❌ Databricks test query failed")
+                st.stop()
+except Exception as e:
+    st.sidebar.error(f"❌ Databricks connection failed: {str(e)}")
+    st.stop()
 
-st.write("---")
-st.write("To find the correct HTTP path:")
-st.write("1. Go to SQL warehouse in Databricks")
-st.write("2. Click on Connection Details")
-st.write("3. Look for 'HTTP Path' value")
+# Initialize model
+try:
+    model = SentenceTransformer('all-MiniLM-L6-v2')
+    st.sidebar.success("✅ Model initialized")
+except Exception as e:
+    st.sidebar.error(f"❌ Model initialization failed: {str(e)}")
+    st.stop()
+
+# Define OpenAI helper
+def get_openai_response(messages):
+    headers = {
+        "Authorization": f"Bearer {openai_api_key}",
+        "Content-Type": "application/json"
+    }
+    response = requests.post(
+        "https://api.openai.com/v1/chat/completions",
+        headers=headers,
+        json={
+            "model": "gpt-3.5-turbo",
+            "messages": messages,
+            "temperature": 0.7
+        }
+    )
+    return response.json()['choices'][0]['message']['content']
+
+# Query interface
+query = st.text_input("Ask a question about permits:")
+
+if st.button("Search"):
+    if query:
+        try:
+            with st.spinner('Processing query...'):
+                # Generate embedding
+                query_embedding = model.encode([query])[0].tolist()
+                st.sidebar.success("✅ Generated query embedding")
+                
+                # Query Databricks
+                with sql.connect(
+                    server_hostname=databricks_host,
+                    http_path=f'/sql/1.0/warehouses/{databricks_cluster}',
+                    access_token=databricks_token
+                ) as connection:
+                    with connection.cursor() as cursor:
+                        cursor.execute("SELECT combined_text FROM embeddings_table LIMIT 3")
+                        results = cursor.fetchall()
+                        
+                context = "\n---\n".join([r[0] for r in results])
+                
+                # Get OpenAI response
+                messages = [
+                    {"role": "system", "content": "Answer based on the provided context."},
+                    {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}"}
+                ]
+                
+                answer = get_openai_response(messages)
+                
+                # Display results
+                st.subheader("Answer")
+                st.write(answer)
+                
+                st.subheader("Source Documents")
+                for doc in [r[0] for r in results]:
+                    st.text(doc)
+                    
+        except Exception as e:
+            st.error(f"Error processing query: {str(e)}")
