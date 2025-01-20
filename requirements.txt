@@ -1,5 +1,5 @@
 streamlit
 sentence-transformers
-pandas
-numpy
+databricks-sql-connector
 requests
+numpy
