@@ -69,6 +69,7 @@ with st.sidebar:
         - Required documentation
         - Specific permit numbers
         - Construction types
+        - & More!
     """)
 
 # Main query interface
@@ -98,7 +99,7 @@ if st.button("Search", type="primary"):
             confidence = random.uniform(0.85, 0.98)
             st.markdown(f"*Confidence Score: {confidence:.2%}*")
     else:
-        st.warning("Please enter a question first.")
+        st.warning("Please enter a question.")
 
 # Footer
 st.markdown("---")
